@@ -22,7 +22,7 @@ from threading import Thread
 today = date.today()
 r = sr.Recognizer()
 keyboard = Controller()
-
+engine = pyttsx3.init('sapi5')
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 engine.setProperty('voice', voices[0].id)
@@ -55,39 +55,38 @@ def wish():
     reply("I am Proton, how may I help you?")
 
 
-# 🎤 FIXED Audio to String
+# Set Microphone parameters
+with sr.Microphone() as source:
+    r.energy_threshold = 500
+    r.dynamic_energy_threshold = False
+
+
+# Audio to String
 def record_audio():
     with sr.Microphone() as source:
-        print("🎤 Listening...")
-        r.adjust_for_ambient_noise(source, duration=1)  # important
         r.pause_threshold = 0.8
+        voice_data = ''
+        audio = r.listen(source, phrase_time_limit=5)
 
         try:
-            audio = r.listen(source, timeout=5, phrase_time_limit=6)
-        except:
-            print("❌ Mic timeout")
-            return ""
-
-    try:
-        voice_data = r.recognize_google(audio)
-        print("✅ You said:", voice_data)
+            voice_data = r.recognize_google(audio)
+        except sr.RequestError:
+            reply('Sorry my Service is down. Plz check your Internet connection')
+        except sr.UnknownValueError:
+            print('cant recognize')
+            pass
         return voice_data.lower()
-
-    except sr.UnknownValueError:
-        print("❌ Can't recognize speech")
-        return ""
-
-    except sr.RequestError as e:
-        print("❌ Google API error:", e)
-        return ""
 
 
 # Executes Commands (input: string)
 def respond(voice_data):
     global file_exp_status, files, is_awake, path
 
-    print("COMMAND:", voice_data)
-    voice_data = voice_data.replace('proton', '')  # FIXED
+    print(voice_data)
+
+    # ✅ IMPORTANT BUG FIX
+    voice_data = voice_data.replace('proton', '')
+
     app.eel.addUserMsg(voice_data)
 
     if is_awake == False:
@@ -95,6 +94,7 @@ def respond(voice_data):
             is_awake = True
             wish()
 
+    # STATIC CONTROLS
     elif 'hello' in voice_data:
         wish()
 
@@ -111,21 +111,55 @@ def respond(voice_data):
         reply('Searching for ' + voice_data.split('search')[1])
         url = 'https://google.com/search?q=' + voice_data.split('search')[1]
         try:
-            webbrowser.open(url)
-            reply('This is what I found')
+            webbrowser.get().open(url)
+            reply('This is what I found Sir')
         except:
             reply('Please check your Internet')
 
-    elif 'bye' in voice_data:
-        reply("Good bye! Have a nice day.")
+    # ✅ NEW WEB COMMANDS ADDED
+    elif 'open youtube' in voice_data:
+        reply("Opening YouTube")
+        webbrowser.open("https://www.youtube.com")
+
+    elif 'open gmail' in voice_data:
+        reply("Opening Gmail")
+        webbrowser.open("https://mail.google.com")
+
+    elif 'open google' in voice_data:
+        reply("Opening Google")
+        webbrowser.open("https://www.google.com")
+
+    elif 'open whatsapp' in voice_data:
+        reply("Opening WhatsApp Web")
+        webbrowser.open("https://web.whatsapp.com")
+
+    elif 'open drive' in voice_data:
+        reply("Opening Google Drive")
+        webbrowser.open("https://drive.google.com")
+
+    elif 'location' in voice_data:
+        reply('Which place are you looking for ?')
+        temp_audio = record_audio()
+        app.eel.addUserMsg(temp_audio)
+        reply('Locating...')
+        url = 'https://google.nl/maps/place/' + temp_audio + '/&amp;'
+        try:
+            webbrowser.get().open(url)
+            reply('This is what I found Sir')
+        except:
+            reply('Please check your Internet')
+
+    elif ('bye' in voice_data) or ('by' in voice_data):
+        reply("Good bye Sir! Have a nice day.")
         is_awake = False
 
-    elif 'exit' in voice_data:
+    elif ('exit' in voice_data) or ('terminate' in voice_data):
         if Gesture_Controller.GestureController.gc_mode:
             Gesture_Controller.GestureController.gc_mode = 0
         app.ChatBot.close()
         sys.exit()
 
+    # DYNAMIC CONTROLS
     elif 'launch gesture recognition' in voice_data:
         if Gesture_Controller.GestureController.gc_mode:
             reply('Gesture recognition is already active')
@@ -133,9 +167,9 @@ def respond(voice_data):
             gc = Gesture_Controller.GestureController()
             t = Thread(target=gc.start)
             t.start()
-            reply('Gesture recognition launched successfully')
+            reply('Launched Successfully')
 
-    elif 'stop gesture recognition' in voice_data:
+    elif ('stop gesture recognition' in voice_data) or ('top gesture recognition' in voice_data):
         if Gesture_Controller.GestureController.gc_mode:
             Gesture_Controller.GestureController.gc_mode = 0
             reply('Gesture recognition stopped')
@@ -148,14 +182,64 @@ def respond(voice_data):
             keyboard.release('c')
         reply('Copied')
 
-    elif 'paste' in voice_data:
+    elif 'page' in voice_data or 'pest' in voice_data or 'paste' in voice_data:
         with keyboard.pressed(Key.ctrl):
             keyboard.press('v')
             keyboard.release('v')
         reply('Pasted')
 
+    # File Navigation (Default Folder set to C://)
+    elif 'list' in voice_data:
+        counter = 0
+        path = 'C://'
+        files = listdir(path)
+        filestr = ""
+        for f in files:
+            counter += 1
+            print(str(counter) + ':  ' + f)
+            filestr += str(counter) + ':  ' + f + '<br>'
+        file_exp_status = True
+        reply('These are the files in your root directory')
+        app.ChatBot.addAppMsg(filestr)
+
+    elif file_exp_status == True:
+        counter = 0
+        if 'open' in voice_data:
+            if isfile(join(path, files[int(voice_data.split(' ')[-1]) - 1])):
+                os.startfile(path + files[int(voice_data.split(' ')[-1]) - 1])
+                file_exp_status = False
+            else:
+                try:
+                    path = path + files[int(voice_data.split(' ')[-1]) - 1] + '//'
+                    files = listdir(path)
+                    filestr = ""
+                    for f in files:
+                        counter += 1
+                        filestr += str(counter) + ':  ' + f + '<br>'
+                        print(str(counter) + ':  ' + f)
+                    reply('Opened Successfully')
+                    app.ChatBot.addAppMsg(filestr)
+                except:
+                    reply('You do not have permission to access this folder')
+
+        if 'back' in voice_data:
+            filestr = ""
+            if path == 'C://':
+                reply('Sorry, this is the root directory')
+            else:
+                a = path.split('//')[:-2]
+                path = '//'.join(a)
+                path += '//'
+                files = listdir(path)
+                for f in files:
+                    counter += 1
+                    filestr += str(counter) + ':  ' + f + '<br>'
+                    print(str(counter) + ':  ' + f)
+                reply('ok')
+                app.ChatBot.addAppMsg(filestr)
+
     else:
-        reply('I am not functioned to do this!')
+        reply('I am not functioned to do this !')
 
 
 # ------------------Driver Code--------------------
@@ -167,6 +251,7 @@ while not app.ChatBot.started:
     time.sleep(0.5)
 
 wish()
+voice_data = None
 
 while True:
     if app.ChatBot.isUserInput():
@@ -174,12 +259,12 @@ while True:
     else:
         voice_data = record_audio()
 
-    if voice_data and 'proton' in voice_data:
+    if 'proton' in voice_data:
         try:
             respond(voice_data)
         except SystemExit:
-            reply("Exit Successful")
+            reply("Exit Successfull")
             break
-        except Exception as e:
-            print("❌ ERROR:", e)
+        except:
+            print("EXCEPTION raised while closing.")
             break
